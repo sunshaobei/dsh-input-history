@@ -56,3 +56,10 @@ localStorage.setItem("dsh-input-history:history-limit", "200")
 - keydown/点击命中依赖 DOM 结构约定（`data-composer-card`），DSH 前端大版本变更时需适配
 - 预热迁移依赖 `sessions.history` RPC（尽力而为，失败则从空环开始累积，不影响发送落库与 ↑/↓ 导航）
 
+## 测试
+
+```sh
+node --test test/client.test.js
+```
+
+10 个用例：块折叠、历史状态机、历史环落库（折叠/去重/截断/上限覆盖/损坏容错/无 storage 降级）、旧键迁移、prompt 提取、插件形状。
