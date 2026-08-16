@@ -152,3 +152,67 @@ test("loadHistory tolerates corruption, non-array payloads, and absent storage",
 
 /* ----------------------------- legacy migration ---------------------------- */
 
+test("migrateLegacyRing folds the old dsh-file-mention ring into the new namespace once", () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	try {
+		store.setItem("dsh-file-mention:input-history", JSON.stringify(["old a", "old a", "old b"]));
+		store.setItem("dsh-file-mention:history-limit", "40");
+		t.migrateLegacyRing();
+		// cap override migrated, ring folded + deduped, legacy keys removed
+		assert.equal(t.historyLimit(), 40);
+		assert.deepEqual(t.loadHistory(), ["old a", "old b"]);
+		assert.equal(store.getItem("dsh-file-mention:input-history"), null);
+		// idempotent: a second call imports nothing
+		t.migrateLegacyRing();
+		assert.deepEqual(t.loadHistory(), ["old a", "old b"]);
+		// a fresh legacy ring (e.g. from a reinstall) still imports once more
+		store.setItem("dsh-file-mention:input-history", JSON.stringify(["old a", "new c"]));
+		t.migrateLegacyRing();
+		assert.deepEqual(t.loadHistory(), ["old a", "old b", "new c"]);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test("foldIntoRing merges, folds blocks, and leaves the source untouched", () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	try {
+		t.recordSent("fresh");
+		store.setItem("some:ring", JSON.stringify(['legacy @a.ts\n<file path="a.ts">\nbody\n</file>\n', "fresh", 42, ""]));
+		assert.equal(t.foldIntoRing("some:ring"), true);
+		// folded + non-string/blank rows dropped; already-present rows skipped
+		assert.deepEqual(t.loadHistory(), ["fresh", "legacy @a.ts"]);
+		assert.equal(store.getItem("some:ring"), JSON.stringify(['legacy @a.ts\n<file path="a.ts">\nbody\n</file>\n', "fresh", 42, ""]));
+		assert.equal(t.foldIntoRing("some:ring"), false, "nothing new to merge");
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+/* ----------------------------- prompt extraction ---------------------------- */
+
+test("extractPrompts keeps human text prompts, folds blocks, dedupes consecutively", () => {
+	const events = [
+		{ event: { type: "user/message", seq: 1, data: { source: { kind: "user" }, content: [{ type: "text", text: "hello" }] } } },
+		{ event: { type: "user/message", seq: 2, data: { source: { kind: "plugin", plugin: "x" }, content: [{ type: "text", text: "injected" }] } } },
+		{ event: { type: "assistant/message", seq: 3, data: {} } },
+		{ event: { type: "user/message", seq: 4, data: { source: { kind: "user" }, content: [{ type: "text", text: "hello" }] } } },
+		{
+			event: {
+				type: "user/message",
+				seq: 5,
+				data: {
+					source: { kind: "user" },
+					content: [
+						{ type: "text", text: 'check @a.ts\n<file path="a.ts">\nbody\n</file>\n' },
+					],
+				},
+			},
+		},
+		{ event: { type: "user/message", seq: 6, data: { source: { kind: "user" }, content: [{ type: "image", url: "x" }] } } },
+	];
+	assert.deepEqual(t.extractPrompts(events), ["hello", "check @a.ts"]);
+	assert.deepEqual(t.extractPrompts([]), []);
+});
