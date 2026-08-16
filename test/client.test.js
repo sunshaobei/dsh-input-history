@@ -60,3 +60,49 @@ test("historyNav: up recalls on empty draft only, walks back, down restores", ()
 	assert.equal(t.historyNav(mid, "up", "edited text"), null);
 });
 
+test("historyNav: whitespace-only draft still recalls", () => {
+	const state = { entries: ["only"], cursor: null, original: "" };
+	const next = t.historyNav(state, "up", "  \n ");
+	assert.deepEqual(next, { cursor: 0, original: "  \n ", text: "only" });
+});
+
+/* ------------------------- persistent history ring ------------------------- */
+
+/** Minimal in-memory localStorage double for the ring tests. */
+function memoryStorage() {
+	const data = new Map();
+	return {
+		getItem: (key) => (data.has(key) ? data.get(key) : null),
+		setItem: (key, value) => { data.set(key, String(value)); },
+		removeItem: (key) => { data.delete(key); },
+	};
+}
+
+test("recordSent folds blocks, skips blanks, dedupes consecutively, caps at the limit", () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	try {
+		assert.deepEqual(t.loadHistory(), []);
+		t.recordSent("  hello  ");
+		t.recordSent("hello"); // consecutive duplicate of the trimmed form
+		t.recordSent("");
+		t.recordSent("  \n ");
+		t.recordSent('check @a.ts\n<file path="a.ts">\nbody\n</file>\n');
+		assert.deepEqual(t.loadHistory(), ["hello", "check @a.ts"]);
+		// cap: default 100, newest wins
+		for (let i = 0; i < 110; i++) t.recordSent(`m${i}`);
+		let ring = t.loadHistory();
+		assert.equal(ring.length, 100);
+		assert.equal(ring[0], "m10");
+		assert.equal(ring[99], "m109");
+		// a later send evicts the oldest
+		t.recordSent("last");
+		ring = t.loadHistory();
+		assert.equal(ring.length, 100);
+		assert.equal(ring[0], "m11");
+		assert.equal(ring[99], "last");
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
