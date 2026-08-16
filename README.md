@@ -32,3 +32,27 @@ dsh plugin --profile web add /path/to/dsh-input-history
 localStorage.setItem("dsh-input-history:history-limit", "200")
 ```
 
+## 架构
+
+```
+┌ composer (ui-conversation, 不改) ─────────────────────────────┐
+│ Enter keydown（捕获）→ 守卫（IME/菜单/锁定/忙碌）            │
+│   → recordSent(草稿)：折叠 <file> 块 → 去重 → 截断 → 落库   │
+│ 发送按钮 click（捕获）→ 快照草稿 → 校验草稿被清空（已发送）  │
+│   → recordSent(快照)                                         │
+│ ↑/↓ keydown（捕获）→ loadHistory() 同步读全局环              │
+│   → historyNav 纯函数 → conversation.input.for(scope).setDraft│
+│ 启动 warm → 一次性合并当前会话历史 prompt + 迁移旧键         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- 客户端 bundle 以 `window.__ModuleLoader__.load` 约定注册，**不 require 任何模块**（纯逻辑，无 React），规避 externals 漂移，无需打包器。
+- 键盘仲裁、IME 守卫、菜单渲染全部由 DSH 内建管线承担；本插件只在捕获阶段补记录与历史导航。
+- 与 dsh-file-mention 解耦：两者可独立安装/卸载/升级；历史数据通过旧键迁移平滑交接。
+
+## 已知限制
+
+- 只记录**输入框实际发送的文本**；纯图片等无文本发送不产生条目；发送失败的尝试按「输入过即记录」的容忍策略保留
+- keydown/点击命中依赖 DOM 结构约定（`data-composer-card`），DSH 前端大版本变更时需适配
+- 预热迁移依赖 `sessions.history` RPC（尽力而为，失败则从空环开始累积，不影响发送落库与 ↑/↓ 导航）
+
