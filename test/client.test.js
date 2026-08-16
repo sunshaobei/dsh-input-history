@@ -106,3 +106,49 @@ test("recordSent folds blocks, skips blanks, dedupes consecutively, caps at the 
 	}
 });
 
+test("historyLimit honors the localStorage override and rejects bad values", () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	try {
+		assert.equal(t.historyLimit(), 100);
+		store.setItem(t.HISTORY_LIMIT_KEY, "20");
+		assert.equal(t.historyLimit(), 20);
+		store.setItem(t.HISTORY_LIMIT_KEY, "0");
+		assert.equal(t.historyLimit(), 100);
+		store.setItem(t.HISTORY_LIMIT_KEY, "-5");
+		assert.equal(t.historyLimit(), 100);
+		store.setItem(t.HISTORY_LIMIT_KEY, "abc");
+		assert.equal(t.historyLimit(), 100);
+		// an overridden cap is enforced at save time
+		store.setItem(t.HISTORY_LIMIT_KEY, "20");
+		t.recordSent("x");
+		for (let i = 0; i < 30; i++) t.recordSent(`k${i}`);
+		assert.equal(t.loadHistory().length, 20);
+		assert.equal(t.loadHistory()[19], "k29");
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test("loadHistory tolerates corruption, non-array payloads, and absent storage", () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	try {
+		assert.deepEqual(t.loadHistory(), []);
+		store.setItem(t.HISTORY_KEY, "not json {");
+		assert.deepEqual(t.loadHistory(), []);
+		store.setItem(t.HISTORY_KEY, JSON.stringify({ a: 1 }));
+		assert.deepEqual(t.loadHistory(), []);
+		store.setItem(t.HISTORY_KEY, JSON.stringify(["ok", 42, null, "two"]));
+		assert.deepEqual(t.loadHistory(), ["ok", "two"]);
+	} finally {
+		delete globalThis.localStorage;
+	}
+	// no localStorage at all: everything degrades to an empty no-op ring
+	assert.deepEqual(t.loadHistory(), []);
+	t.recordSent("ignored");
+	assert.deepEqual(t.loadHistory(), []);
+});
+
+/* ----------------------------- legacy migration ---------------------------- */
+
