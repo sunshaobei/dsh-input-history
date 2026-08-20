@@ -1,14 +1,15 @@
 {
   "name": "dsh-input-history",
-  "version": "0.1.0",
-  "description": "Standalone arrow-key input history for the DSH web composer: every sent prompt (Enter or the send button, in any session or workspace) persists to ONE global localStorage ring (default 100 entries, overridable) and ↑/↓ recalls it instantly and completely.",
+  "version": "0.2.0",
+  "description": "Standalone arrow-key input history for the DSH web composer: every sent prompt (Enter or the send button, in any session or workspace) persists to ONE global ring in ~/.dsh/input-history.json (default 100 entries, overridable) and ↑/↓ recalls it instantly and completely — survives app restarts.",
   "keywords": [
     "dsh",
     "deepseek-harness",
     "plugin",
     "input-history",
     "arrow-key",
-    "composer"
+    "composer",
+    "persistence"
   ],
   "type": "module",
   "license": "MIT",

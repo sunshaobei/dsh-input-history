@@ -38,6 +38,39 @@ test("foldFileBlocks collapses text and binary blocks back to mentions", () => {
 	assert.equal(t.foldFileBlocks("no blocks here"), "no blocks here");
 });
 
+/* ------------------------------ attachment markers -------------------------- */
+
+test("imageMarker renders a name when present, generic marker when unnamed", () => {
+	assert.equal(t.imageMarker({ file: { name: "cat.png" } }), "[图片: cat.png]");
+	assert.equal(t.imageMarker({ file: { name: "  " } }), "[图片]");
+	assert.equal(t.imageMarker({ file: {} }), "[图片]");
+	assert.equal(t.imageMarker({}), "[图片]");
+	assert.equal(t.imageMarker(null), "[图片]");
+	assert.equal(t.imageMarker(undefined), "[图片]");
+	assert.deepEqual(t.imageMarkers([
+		{ file: { name: "a.png" } },
+		{ file: { name: "b.jpg" } },
+		{ file: {} },
+		null,
+	]), ["[图片: a.png]", "[图片: b.jpg]", "[图片]"]);
+	assert.deepEqual(t.imageMarkers([]), []);
+});
+
+test("composeSendText joins text, file tokens, and image markers; skips empty parts", () => {
+	assert.equal(t.composeSendText("hello", [], []), "hello");
+	assert.equal(t.composeSendText("看图", ["@a.ts", "@b.md"], ["[图片: cat.png]"]), "看图\n@a.ts @b.md\n[图片: cat.png]");
+	// file tokens and image markers combined on one line each
+	assert.equal(t.composeSendText("", ["@a.ts", "  ", "@b.ts"], []), "@a.ts @b.ts");
+	assert.equal(t.composeSendText("", [], ["[图片]", "[图片: x.png]"]), "[图片]\n[图片: x.png]");
+	// image-only send still yields an entry
+	assert.equal(t.composeSendText("", [], ["[图片]"]), "[图片]");
+	// nothing present -> empty
+	assert.equal(t.composeSendText("", [], []), "");
+	assert.equal(t.composeSendText("   ", [], []), "");
+	// non-string / malformed tokens and markers are dropped
+	assert.equal(t.composeSendText("x", [42, null, ""], ["  ", ""]), "x");
+});
+
 /* ----------------------------- history reducer ----------------------------- */
 
 test("historyNav: up recalls on empty draft only, walks back, down restores", () => {
@@ -193,7 +226,7 @@ test("foldIntoRing merges, folds blocks, and leaves the source untouched", () =>
 
 /* ----------------------------- prompt extraction ---------------------------- */
 
-test("extractPrompts keeps human text prompts, folds blocks, dedupes consecutively", () => {
+test("extractPrompts keeps human prompts (text + images), folds blocks, dedupes consecutively", () => {
 	const events = [
 		{ event: { type: "user/message", seq: 1, data: { source: { kind: "user" }, content: [{ type: "text", text: "hello" }] } } },
 		{ event: { type: "user/message", seq: 2, data: { source: { kind: "plugin", plugin: "x" }, content: [{ type: "text", text: "injected" }] } } },
@@ -211,8 +244,176 @@ test("extractPrompts keeps human text prompts, folds blocks, dedupes consecutive
 				},
 			},
 		},
+		// unnamed image-only send -> generic image marker
 		{ event: { type: "user/message", seq: 6, data: { source: { kind: "user" }, content: [{ type: "image", url: "x" }] } } },
 	];
-	assert.deepEqual(t.extractPrompts(events), ["hello", "check @a.ts"]);
+	assert.deepEqual(t.extractPrompts(events), ["hello", "check @a.ts", "[图片]"]);
 	assert.deepEqual(t.extractPrompts([]), []);
+});
+
+test("extractPrompts records text + image blocks of one send, with image file names", () => {
+	const events = [
+		{
+			event: {
+				type: "user/message",
+				seq: 1,
+				data: {
+					source: { kind: "user" },
+					content: [
+						{ type: "text", text: "看图" },
+						{ type: "image", url: "x", name: "cat.png" },
+						{ type: "image", url: "y" }, // unnamed
+					],
+				},
+			},
+		},
+	];
+	assert.deepEqual(t.extractPrompts(events), ["看图\n[图片: cat.png]\n[图片]"]);
+});
+
+/* ---------------------------- host durability ---------------------------- */
+
+test("mergeRings unions primary-first and drops exact duplicates", () => {
+	assert.deepEqual(t.mergeRings(["a", "b"], ["c", "a", "d"]), ["a", "b", "c", "d"]);
+	assert.deepEqual(t.mergeRings([], ["a", "a", "b"]), ["a", "b"]);
+	assert.deepEqual(t.mergeRings(["a", "b"], []), ["a", "b"]);
+	assert.deepEqual(t.mergeRings([], []), []);
+	// non-strings and blanks are skipped
+	assert.deepEqual(t.mergeRings(["a", 42, null], ["b", "", "  "]), ["a", "b"]);
+});
+
+test("sameRing compares order-sensitively", () => {
+	assert.equal(t.sameRing([], []), true);
+	assert.equal(t.sameRing(["a", "b"], ["a", "b"]), true);
+	assert.equal(t.sameRing(["a", "b"], ["b", "a"]), false);
+	assert.equal(t.sameRing(["a"], ["a", "a"]), false);
+});
+
+test("callHostApi unwraps the value and fails soft to null", async () => {
+	const calls = [];
+	globalThis.fetch = (url, options) => {
+		calls.push({ url, options });
+		return Promise.resolve({
+			ok: true,
+			json: () => Promise.resolve({ ok: true, value: { entries: ["a"] } }),
+		});
+	};
+	try {
+		assert.deepEqual(await t.callHostApi("history.read", {}), { entries: ["a"] });
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].url, "/input-history/api/history.read");
+		assert.equal(calls[0].options.method, "POST");
+		assert.deepEqual(JSON.parse(calls[0].options.body), {});
+	} finally {
+		delete globalThis.fetch;
+	}
+	// transport failure -> null, never throws
+	globalThis.fetch = () => Promise.reject(new Error("boom"));
+	try {
+		assert.equal(await t.callHostApi("history.read", {}), null);
+	} finally {
+		delete globalThis.fetch;
+	}
+	// absent fetch -> null
+	assert.equal(await t.callHostApi("history.read", {}), null);
+	// keepalive is plumbed through
+	globalThis.fetch = (url, options) => {
+		calls.push(options);
+		return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+	};
+	try {
+		await t.callHostApi("history.write", { entries: ["x"] }, true);
+		assert.equal(calls[calls.length - 1].keepalive, true);
+	} finally {
+		delete globalThis.fetch;
+	}
+});
+
+test("adoptHostLimit applies only when no local override exists", () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	try {
+		t.adoptHostLimit(42);
+		assert.equal(t.historyLimit(), 42);
+		store.setItem(t.HISTORY_LIMIT_KEY, "7");
+		t.adoptHostLimit(99);
+		assert.equal(t.historyLimit(), 7, "local override wins");
+		t.adoptHostLimit(0);
+		assert.equal(t.historyLimit(), 7, "bad limit ignored");
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test("syncFromHost merges the host ring with local and pushes the union back", async () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	const writes = [];
+	globalThis.fetch = (url, options) => {
+		const payload = JSON.parse(options.body);
+		if (url.endsWith("/history.read")) {
+			return Promise.resolve({
+				ok: true,
+				json: () => Promise.resolve({ ok: true, value: { entries: ["server a", "server b"], limit: 100 } }),
+			});
+		}
+		if (url.endsWith("/history.write")) {
+			writes.push(payload);
+			return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, value: { entries: payload.entries, limit: payload.limit } }) });
+		}
+		return Promise.resolve({ ok: false, json: () => Promise.resolve(null) });
+	};
+	try {
+		// local-only entries survive and are appended after the host's
+		store.setItem(t.HISTORY_KEY, JSON.stringify(["local x", "server b"]));
+		await t.syncFromHost();
+		assert.deepEqual(t.loadHistory(), ["server a", "server b", "local x"]);
+		// syncFromHost schedules the debounced push; flushing it performs
+		// exactly one write with the union (host was behind)
+		await t.flushHostWrite();
+		assert.equal(writes.length, 1);
+		assert.deepEqual(writes[0].entries, ["server a", "server b", "local x"]);
+		// adopted cap: no local override was present
+		assert.equal(t.historyLimit(), 100);
+	} finally {
+		delete globalThis.localStorage;
+		delete globalThis.fetch;
+	}
+	// host failure leaves the local ring untouched and writes nothing
+	const store2 = memoryStorage();
+	globalThis.localStorage = store2;
+	store2.setItem(t.HISTORY_KEY, JSON.stringify(["only local"]));
+	globalThis.fetch = () => Promise.reject(new Error("offline"));
+	try {
+		await t.syncFromHost();
+		assert.deepEqual(t.loadHistory(), ["only local"]);
+	} finally {
+		delete globalThis.localStorage;
+		delete globalThis.fetch;
+	}
+});
+
+test("syncFromHost idempotent when host and local already agree", async () => {
+	const store = memoryStorage();
+	globalThis.localStorage = store;
+	let writeCalls = 0;
+	globalThis.fetch = (url, options) => {
+		if (url.endsWith("/history.read")) {
+			return Promise.resolve({
+				ok: true,
+				json: () => Promise.resolve({ ok: true, value: { entries: ["a", "b"], limit: 100 } }),
+			});
+		}
+		writeCalls++;
+		return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, value: {} }) });
+	};
+	try {
+		store.setItem(t.HISTORY_KEY, JSON.stringify(["a", "b"]));
+		await t.syncFromHost();
+		assert.equal(writeCalls, 0, "no push when already in sync");
+		assert.deepEqual(t.loadHistory(), ["a", "b"]);
+	} finally {
+		delete globalThis.localStorage;
+		delete globalThis.fetch;
+	}
 });
