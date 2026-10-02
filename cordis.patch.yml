@@ -1,13 +1,8 @@
-# dsh-input-history bundle patch.
-#
-# Installing through the official CLI —
-#
-#   dsh plugin --profile web add /path/to/dsh-input-history
-#
-# — reconciles `dsh.profile.bundles`, sees this declaration, and appends
-# `dsh-input-history` to the bundle stack; this patch inserts the host half's
-# loader row. Keep the id stable: the client bundle id and the profile row
-# id must stay in sync for HMR bookkeeping.
+# dsh-input-history bundle patch: mounts the no-op host stub so the package
+# becomes a host Loader entry (that is what makes the roster generator pick
+# up its `dsh.client` declaration and serve lib/client.js to the browser).
+
 - insert:
-    - id: input-history
+    - id: dsh-input-history
       name: 'dsh-input-history'
+      config: {}

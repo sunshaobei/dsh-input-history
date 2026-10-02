@@ -1,7 +1,7 @@
 {
   "name": "dsh-input-history",
-  "version": "0.2.0",
-  "description": "Standalone arrow-key input history for the DSH web composer: every sent prompt (Enter or the send button, in any session or workspace) persists to ONE global ring in ~/.dsh/input-history.json (default 100 entries, overridable) and ↑/↓ recalls it instantly and completely — survives app restarts.",
+  "version": "0.3.0",
+  "description": "Input history switcher for the DSH composer: every submitted prompt (text plus attachment bytes) persists locally — max 50 entries, newest first — and an EMPTY composer recalls it via ArrowUp/ArrowDown, with image thumbnails and file attachments re-attached through the conversation draft pipeline.",
   "keywords": [
     "dsh",
     "deepseek-harness",
@@ -41,11 +41,7 @@
     },
     "client": {
       "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-api-gateway",
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
+      "inject": []
     }
   }
 }

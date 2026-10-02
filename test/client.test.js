@@ -99,6 +99,23 @@ test("historyNav: whitespace-only draft still recalls", () => {
 	assert.deepEqual(next, { cursor: 0, original: "  \n ", text: "only" });
 });
 
+test("historyNav: native recall keeps browsing alive via recallText (draft ≠ entry text)", () => {
+	const entries = ["first", "second\n@file\n[图片: a.png]", "third"];
+	// up on empty recalls the newest entry
+	const up1 = t.historyNav({ entries, cursor: null, original: "" }, "up", "");
+	assert.deepEqual(up1, { cursor: 2, original: "", text: "third" });
+	// up again lands on the attachment entry; the plugin natively recalled it as
+	// the raw text "second" (attachments restored, markers dropped)
+	const browsingRaw = { entries, cursor: 1, original: "", recallText: "second" };
+	const up2 = t.historyNav(browsingRaw, "up", "second");
+	assert.deepEqual(up2, { cursor: 0, original: "", text: "first" });
+	// down walks forward again while the draft still equals the recallText
+	const down = t.historyNav({ entries, cursor: 0, original: "", recallText: "first" }, "down", "first");
+	assert.deepEqual(down, { cursor: 1, original: "", text: "second\n@file\n[图片: a.png]" });
+	// an unrelated edit still exits browsing even with recallText set
+	assert.equal(t.historyNav({ ...browsingRaw, cursor: 2 }, "up", "edited"), null);
+});
+
 /* ------------------------- persistent history ring ------------------------- */
 
 /** Minimal in-memory localStorage double for the ring tests. */
