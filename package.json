@@ -1,6 +1,6 @@
 {
   "name": "dsh-input-history",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Input history switcher for the DSH composer: every submitted prompt (text plus attachment bytes) persists locally — max 50 entries, newest first — and an EMPTY composer recalls it via ArrowUp/ArrowDown, with image thumbnails and file attachments re-attached through the conversation draft pipeline.",
   "keywords": [
     "dsh",
