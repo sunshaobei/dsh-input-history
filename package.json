@@ -1,7 +1,7 @@
 {
   "name": "@sunshaobei/dsh-input-history",
   "description": "Input history switcher for the DSH composer: locally persists every submitted prompt (text plus attachment bytes, max 50, newest-first) and re-fills the empty composer via ArrowUp/ArrowDown with file references and image previews re-attached through the conversation draft pipeline.",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
