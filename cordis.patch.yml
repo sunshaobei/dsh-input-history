@@ -1,0 +1,8 @@
+# dsh-input-history bundle patch: mounts the no-op host stub so the package
+# becomes a host Loader entry (that is what makes the roster generator pick
+# up its `dsh.client` declaration and serve lib/client.js to the browser).
+
+- insert:
+    - id: dsh-input-history
+      name: 'dsh-input-history'
+      config: {}
